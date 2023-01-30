@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "./Delegates.sol";
 
-contract SadCatsNFT is ERC721A, ReentrancyGuard, Ownable {
+contract SadCatsNFT is ERC721A, ReentrancyGuard, Delegated {
     using Strings for uint256;
     mapping(address => uint256) private _balances;
 
@@ -21,7 +21,7 @@ contract SadCatsNFT is ERC721A, ReentrancyGuard, Ownable {
     uint256 public publicSalePrice = 0.12 ether;
 
     // ======== SALE STATUS ========
-    uint8 public currentMintBatch; // 0: Team; 1: Whitelisted; 2: Public
+    uint8 public currentMintBatch = 0; // 0: Team; 1: Whitelisted; 2: Public
 
     // ======== METADATA ========
     bool public isRevealed = false;
@@ -36,12 +36,75 @@ contract SadCatsNFT is ERC721A, ReentrancyGuard, Ownable {
     // ======== CONSTRUCTOR ========
     constructor() ERC721A("Sad Cats NFT", "SADCATS") {}
 
+    function whitelistMint(bytes32[] calldata _proof)
+        external
+        payable
+        callerIsUser
+    {
+        require(currentMintBatch == 1, "Incorrect mint batch");
+        require(msg.value == publicSalePrice, "Incorrect ether sent");
+        require(totalSupply() < MAX_SUPPLY, "Max supply reached");
+        require(_numberMinted(msg.sender) < 1, "Already minted");
+        require(
+            MerkleProof.verify(
+                _proof,
+                mintBatch2Root,
+                keccak256(abi.encodePacked(msg.sender))
+            ),
+            "Invalid proof"
+        );
+        _safeMint(msg.sender, 1);
+    }
+
+    // public mint - allow users to mint 1 NFT
     function publicMint() external payable callerIsUser {
         require(currentMintBatch == 3, "Incorrect mint batch");
         require(totalSupply() < MAX_SUPPLY, "Max supply reached");
         require(_numberMinted(msg.sender) < 1, "Already minted");
         require(msg.value == publicSalePrice, "Incorrect ether sent");
         _safeMint(msg.sender, 1);
+    }
+
+    function teamMint(uint256 _quantity) external onlyOwner {
+        require(totalSupply() + _quantity <= MAX_SUPPLY, "Max supply reached");
+        _safeMint(msg.sender, _quantity);
+    }
+
+    // ========= GETTERS ===========
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        virtual
+        override
+        returns (string memory)
+    {
+        require(
+            _exists(tokenId),
+            "ERC721aMetadata: URI query for nonexistent token"
+        );
+
+        if (!isRevealed) {
+            return notRevealedURI;
+        }
+
+        return
+            string(
+                abi.encodePacked(
+                    _baseTokenURI,
+                    tokenId.toString(),
+                    baseExtension
+                )
+            );
+    }
+
+    function _startTokenId()
+        internal
+        view
+        virtual
+        override(ERC721A)
+        returns (uint256)
+    {
+        return 1;
     }
 
     // ======== SETTERS ========
@@ -63,6 +126,37 @@ contract SadCatsNFT is ERC721A, ReentrancyGuard, Ownable {
 
     function setMintBatch2Root(bytes32 _merkleRoot) external onlyOwner {
         mintBatch2Root = _merkleRoot;
+    }
+
+    function setBaseURI(string calldata baseURI) external onlyDelegates {
+        _baseTokenURI = baseURI;
+    }
+
+    function setNotRevealedURI(string memory _notRevealedURI)
+        public
+        onlyDelegates
+    {
+        notRevealedURI = _notRevealedURI;
+    }
+
+    function setIsRevealed(bool _reveal) external onlyDelegates {
+        isRevealed = _reveal;
+    }
+
+    // ======== WITHDRAW ========
+
+    function withdraw(uint256 amount_) external onlyOwner {
+        require(
+            address(this).balance >= amount_,
+            "Address: insufficient balance"
+        );
+
+        // This will payout the owner 100% of the contract balance.
+        // Do not remove this otherwise you will not be able to withdraw the funds.
+        // =============================================================================
+        (bool os, ) = payable(owner()).call{value: amount_}("");
+        require(os);
+        // =============================================================================
     }
 
     // currently not in use.
