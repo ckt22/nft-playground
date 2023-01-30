@@ -1,4 +1,7 @@
 dotenv: .env
+networks:
+  goerli:
+    verify: True
 wallets:
   from_key: ${PRIVATE_KEY}
 dependencies:
