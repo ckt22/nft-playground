@@ -158,9 +158,7 @@ contract SadCatsNFT is ERC721A, ReentrancyGuard, Delegated {
         require(os);
         // =============================================================================
     }
-
-    // currently not in use.
-    // ensure the caller is a user, not a bot.
+    
     modifier callerIsUser() {
         require(tx.origin == msg.sender, "The caller is another contract");
         _;
